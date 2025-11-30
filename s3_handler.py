@@ -13,7 +13,6 @@ logger.setLevel(logging.INFO)
 
 s3 = boto3.client("s3")
 
-# Yahoo Finance API URL template
 YF_CHART_URL = (
     "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
     "?range={range}&interval={interval}&events=div,splits"
@@ -71,9 +70,8 @@ def lambda_handler(event, context):
     range_       = os.getenv("RANGE")
     interval     = os.getenv("INTERVAL")
     bucket_name  = os.getenv("BUCKET_NAME")
-    prefix       = os.getenv("PREFIX")
+    prefix       = os.getenv("PREFIX")  # should be "raw-data/"
 
-    # Validation
     if not tickers_str:
         raise ValueError("TICKERS environment variable is required")
     if not bucket_name:
@@ -82,6 +80,9 @@ def lambda_handler(event, context):
         raise ValueError("PREFIX environment variable is required")
 
     tickers = [t.strip() for t in tickers_str.split(",") if t.strip()]
+
+    # Define your benchmark tickers
+    BENCHMARKS = ["^GSPC", "^RUT"]
 
     logger.info(f"[CONFIG] Tickers={tickers}, range={range_}, interval={interval}")
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -94,7 +95,7 @@ def lambda_handler(event, context):
             logger.warning(f"No data fetched for ticker {ticker}")
             continue
 
-        # Build CSV for this ticker
+        # Build CSV for this specific ticker
         csv_buffer = io.StringIO()
         writer = csv.DictWriter(csv_buffer, fieldnames=[
             "date", "open", "high", "low", "close", "adj_close", "volume", "ticker"
@@ -103,11 +104,17 @@ def lambda_handler(event, context):
         for r in rows:
             writer.writerow(r)
 
-        # Sanitize ticker folder name
+        # Clean folder name (remove ^)
         sanitized = ticker.replace("^", "")
 
-        # Final S3 key (no date subfolders)
-        s3_key = f"{prefix}{sanitized}/{sanitized}_{timestamp}.csv"
+        # Choose folder based on stock vs benchmark
+        if ticker in BENCHMARKS:
+            folder = f"{prefix}benchmarks/{sanitized}/"
+        else:
+            folder = f"{prefix}stocks/{sanitized}/"
+
+        # Final S3 key
+        s3_key = f"{folder}{sanitized}_{timestamp}.csv"
 
         try:
             s3.put_object(
