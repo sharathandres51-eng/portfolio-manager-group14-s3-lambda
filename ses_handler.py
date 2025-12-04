@@ -108,7 +108,7 @@ def compute_portfolio_vol(holdings: list):
 
 
 # ------------------------------------------------------------------------------
-# NEW: Dedup logic using DynamoDB conditional update
+# Dedup logic using DynamoDB conditional update
 # Only allow one email per client per cooldown window
 # ------------------------------------------------------------------------------
 
@@ -126,7 +126,7 @@ def try_mark_email_sent(client_id: str, cooldown_seconds: int) -> bool:
                 ":threshold": Decimal(str(threshold))
             }
         )
-        return True  # This invocation is allowed to send
+        return True
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             print(f"[DEDUP] Email already sent recently for client {client_id} — skipping.")
