@@ -70,7 +70,7 @@ def lambda_handler(event, context):
     range_       = os.getenv("RANGE")
     interval     = os.getenv("INTERVAL")
     bucket_name  = os.getenv("BUCKET_NAME")
-    prefix       = os.getenv("PREFIX")  # should be "raw-data/"
+    prefix       = os.getenv("PREFIX")
 
     if not tickers_str:
         raise ValueError("TICKERS environment variable is required")
