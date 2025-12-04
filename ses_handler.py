@@ -8,7 +8,7 @@ from boto3.dynamodb.types import TypeDeserializer
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
-# ----------------- Configuration ----------------- #
+#Configuration
 
 CLIENT_TABLE_NAME      = os.getenv("CLIENT_TABLE")
 PRED_TABLE_NAME        = os.getenv("PREDICTIONS_TABLE")
@@ -29,7 +29,7 @@ ses = boto3.client("ses", region_name=SES_REGION)
 deserializer = TypeDeserializer()
 
 
-# ----------------- Helper functions ----------------- #
+#Helper functions
 
 def ddb_stream_image_to_python(ddb_item: dict) -> dict:
     return {k: deserializer.deserialize(v) for k, v in ddb_item.items()}
@@ -107,11 +107,9 @@ def compute_portfolio_vol(holdings: list):
     return holdings_with_vol, portfolio_vol
 
 
-# ------------------------------------------------------------------------------
+
 # Dedup logic using DynamoDB conditional update
 # Only allow one email per client per cooldown window
-# ------------------------------------------------------------------------------
-
 def try_mark_email_sent(client_id: str, cooldown_seconds: int) -> bool:
     now_ts = int(time.time())
     threshold = now_ts - cooldown_seconds
@@ -135,8 +133,7 @@ def try_mark_email_sent(client_id: str, cooldown_seconds: int) -> bool:
             raise
 
 
-# ----------------- Email formatting ----------------- #
-
+#Email formatting
 def build_email_bodies(client, holdings_with_vol, portfolio_vol, target_vol, lower, upper, within):
     client_id = client.get("ClientID", "N/A")
     name      = client.get("name", "Client")
@@ -144,7 +141,6 @@ def build_email_bodies(client, holdings_with_vol, portfolio_vol, target_vol, low
     status_text = "WITHIN" if within else "OUTSIDE"
     status_color = "green" if within else "red"
 
-    # ---- TEXT ----
     lines = [
         f"Hello {name},",
         "",
@@ -176,7 +172,6 @@ def build_email_bodies(client, holdings_with_vol, portfolio_vol, target_vol, low
 
     text_body = "\n".join(lines)
 
-    # ---- HTML ----
     if holdings_with_vol:
         rows = "".join([
             f"<tr><td>{h['ticker']}</td><td align='right'>{int(h['quantity'])}</td>"
@@ -231,7 +226,7 @@ def send_email(recipient, text_body, html_body):
         print("SES error:", e.response["Error"]["Message"])
 
 
-# ----------------- Main Handler ----------------- #
+#Lambda Handler
 
 def lambda_handler(event, context):
 
@@ -257,7 +252,6 @@ def lambda_handler(event, context):
 
     print("Updated tickers:", updated_tickers)
 
-    # Scan ALL clients
     scan_kwargs = {}
     clients = []
     while True:
