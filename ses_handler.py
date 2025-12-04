@@ -19,7 +19,7 @@ EMAIL_SUBJECT          = os.getenv("EMAIL_SUBJECT")
 SENDER_EMAIL           = os.getenv("SENDER_EMAIL")
 
 # Email cooldown (seconds)
-EMAIL_COOLDOWN_SECONDS = int(os.getenv("EMAIL_COOLDOWN_SECONDS", "3600"))
+EMAIL_COOLDOWN_SECONDS = int(os.getenv("EMAIL_COOLDOWN_SECONDS"))
 
 dynamodb = boto3.resource("dynamodb")
 client_table = dynamodb.Table(CLIENT_TABLE_NAME)
