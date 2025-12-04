@@ -18,6 +18,9 @@ SES_REGION             = os.getenv("SES_REGION", "us-east-1")
 EMAIL_SUBJECT          = os.getenv("EMAIL_SUBJECT", "Daily Portfolio Volatility Update")
 SENDER_EMAIL           = os.getenv("SENDER_EMAIL")
 
+# NEW: cooldown in seconds to avoid multiple emails per client in a short time
+EMAIL_COOLDOWN_SECONDS = int(os.getenv("EMAIL_COOLDOWN_SECONDS", "300"))
+
 dynamodb = boto3.resource("dynamodb")
 client_table = dynamodb.Table(CLIENT_TABLE_NAME)
 pred_table   = dynamodb.Table(PRED_TABLE_NAME)
@@ -243,6 +246,36 @@ def send_email(recipient: str, text_body: str, html_body: str):
         print("SES error:", e.response["Error"]["Message"])
 
 
+# ------------- NEW: /tmp-based dedup per client ------------- #
+
+def should_send_email_for_client(client_id: str) -> bool:
+    """
+    Deduplicate across multiple Lambda invocations using /tmp.
+    Only send if we haven't emailed this client in the last
+    EMAIL_COOLDOWN_SECONDS.
+    """
+    if not client_id:
+        return True  # no ID, no dedup possible
+
+    path = f"/tmp/email_sent_{client_id}"
+
+    try:
+        if os.path.exists(path):
+            last_mtime = os.path.getmtime(path)
+            if time.time() - last_mtime < EMAIL_COOLDOWN_SECONDS:
+                print(f"Skipping email for {client_id}: cooldown not expired.")
+                return False
+
+        # Update marker file (or create if missing)
+        with open(path, "w") as f:
+            f.write(str(time.time()))
+    except Exception as e:
+        # If anything goes wrong, fail open (better to send than silently drop)
+        print(f"Error in dedup for {client_id}: {e}")
+
+    return True
+
+
 # ----------------- Main Lambda handler ----------------- #
 
 def lambda_handler(event, context):
@@ -296,10 +329,11 @@ def lambda_handler(event, context):
         holdings = client.get("holdings", [])
         holding_tickers = {h.get("ticker") for h in holdings if isinstance(h, dict)}
 
-        # Dedup logic: only process client if any of their tickers was updated
+        # Only process client if any of their tickers was updated
         if not (holding_tickers & updated_tickers):
             continue
 
+        # Compute portfolio volatility
         holdings_with_vol, portfolio_vol = compute_portfolio_vol(holdings)
         if portfolio_vol is None:
             print(f"Client {client.get('ClientID')} has no usable volatility data – skipping.")
@@ -307,8 +341,7 @@ def lambda_handler(event, context):
 
         target_vol = to_float(client.get("targetRisk"))
         if target_vol is None:
-            # If no target set, you could decide to skip or set default.
-            # Here we default to current portfolio vol to avoid nonsense bands.
+            # If no target set, default to current portfolio vol to avoid nonsense bands
             target_vol = portfolio_vol
 
         vol_tol = get_vol_tolerance_for_client(client)
@@ -330,7 +363,12 @@ def lambda_handler(event, context):
             print(f"Error updating client {client.get('ClientID')}:",
                   e.response["Error"]["Message"])
 
-        # 4. Build and send email
+        # 4. Dedup: only send email if cooldown expired
+        client_id = client.get("ClientID")
+        if not should_send_email_for_client(client_id):
+            continue
+
+        # 5. Build and send email
         text_body, html_body = build_email_bodies(
             client,
             holdings_with_vol,
